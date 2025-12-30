@@ -52,7 +52,17 @@ app.use(express.static('public'));
 const storage = multer.diskStorage({
     destination: async (req, file, cb) => {
         const uploadPath = req.body.path || '/';
-        const fullPath = path.join(STORAGE_PATH, uploadPath);
+        let fullPath = path.join(STORAGE_PATH, uploadPath);
+        
+        // Check if there's a relative path for this file (folder structure)
+        const fileIndex = req.files ? req.files.findIndex(f => f.originalname === file.originalname) : -1;
+        if (fileIndex !== -1 && req.body.relativePaths && req.body.relativePaths[fileIndex]) {
+            const relativePath = req.body.relativePaths[fileIndex];
+            const dirPath = path.dirname(relativePath);
+            if (dirPath && dirPath !== '.') {
+                fullPath = path.join(STORAGE_PATH, uploadPath, dirPath);
+            }
+        }
         
         try {
             await fs.mkdir(fullPath, { recursive: true });

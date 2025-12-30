@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>TankStorage - Network File Manager</title>
+    
+    <!-- Video.js for better video playback -->
+    <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
+    <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+    
     <style>
         * {
             margin: 0;
@@ -93,6 +98,60 @@
             display: flex;
             gap: 0.5rem;
             flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .view-mode-toggle {
+            display: flex;
+            gap: 0;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .view-mode-toggle .btn {
+            border-radius: 0;
+            border: none;
+            border-right: 1px solid var(--border);
+        }
+
+        .view-mode-toggle .btn:last-child {
+            border-right: none;
+        }
+
+        .view-mode-toggle .btn.active {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-icon {
+            padding: 0.6rem 0.8rem;
+            font-size: 1.2rem;
+        }
+
+        .hamburger-menu {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 0.5rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-around;
+            width: 2rem;
+            height: 2rem;
+            transition: all 0.2s;
+        }
+
+        .hamburger-menu:hover {
+            opacity: 0.7;
+        }
+
+        .hamburger-menu span {
+            width: 100%;
+            height: 3px;
+            background-color: var(--text);
+            border-radius: 2px;
+            transition: all 0.2s;
         }
 
         .btn {
@@ -172,6 +231,65 @@
             margin-bottom: 2rem;
         }
 
+        .files-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .files-list .file-item {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-radius: 8px;
+        }
+
+        .files-list .file-item:hover {
+            transform: translateX(4px);
+        }
+
+        .files-list .file-thumbnail {
+            width: 80px;
+            height: 60px;
+            margin-right: 1rem;
+            margin-bottom: 0;
+            flex-shrink: 0;
+        }
+
+        .files-list .file-icon {
+            font-size: 2rem;
+            margin-right: 1rem;
+            margin-bottom: 0;
+            width: 80px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .files-list .file-name {
+            flex: 1;
+            margin-bottom: 0;
+            font-size: 0.95rem;
+        }
+
+        .files-list .file-size {
+            margin-left: 1rem;
+            font-size: 0.85rem;
+        }
+
+        .files-list .file-actions {
+            position: static;
+            margin-left: 1rem;
+        }
+
+        .files-list .file-item:hover .file-actions {
+            display: block;
+        }
+
         .file-item {
             background: var(--card);
             border: 1px solid var(--border);
@@ -194,6 +312,50 @@
             margin-bottom: 0.5rem;
         }
 
+        .file-thumbnail {
+            width: 100%;
+            height: 120px;
+            margin-bottom: 0.5rem;
+            border-radius: 8px;
+            overflow: hidden;
+            background: var(--bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .file-thumbnail img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .video-thumbnail {
+            position: relative;
+        }
+
+        .video-thumbnail .thumbnail-icon {
+            font-size: 3rem;
+        }
+
+        .video-play-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            pointer-events: none;
+        }
+
         .file-name {
             font-size: 0.85rem;
             word-wrap: break-word;
@@ -210,6 +372,7 @@
             top: 0.5rem;
             right: 0.5rem;
             display: none;
+            z-index: 10;
         }
 
         .file-item:hover .file-actions {
@@ -228,17 +391,25 @@
         }
 
         .delete-btn {
-            background: var(--danger);
+            background: rgba(220, 38, 38, 0.95);
             color: white;
             border: none;
             border-radius: 50%;
-            width: 28px;
-            height: 28px;
+            width: 32px;
+            height: 32px;
             cursor: pointer;
             font-size: 1rem;
             display: flex;
             align-items: center;
             justify-content: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            transition: all 0.2s;
+        }
+
+        .delete-btn:hover {
+            background: var(--danger);
+            transform: scale(1.1);
+            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.4);
         }
 
         .modal {
@@ -312,17 +483,30 @@
         .media-viewer {
             background: var(--card);
             border-radius: 16px;
-            padding: 1rem;
+            padding: 2rem;
             max-width: 90vw;
             max-height: 90vh;
             position: relative;
+            overflow: auto;
         }
 
-        .media-viewer img,
-        .media-viewer video {
+        .media-viewer img {
             max-width: 100%;
-            max-height: 80vh;
+            max-height: 70vh;
             border-radius: 8px;
+            display: block;
+            margin: 0 auto;
+        }
+
+        .media-viewer video,
+        .media-viewer .video-js {
+            max-width: 100%;
+            max-height: 70vh;
+            border-radius: 8px;
+        }
+
+        .media-viewer .video-js {
+            width: 100% !important;
         }
 
         .loading {
@@ -370,6 +554,108 @@
                 transform: translateX(0);
                 opacity: 1;
             }
+        }
+
+        /* Progress notification (bottom left) */
+        .progress-notification {
+            position: fixed;
+            bottom: 2rem;
+            left: 2rem;
+            background: var(--card);
+            padding: 1rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+            z-index: 2000;
+            min-width: 300px;
+            max-width: 400px;
+            opacity: 0;
+            transform: translateY(100px);
+            transition: all 0.3s ease;
+        }
+
+        .progress-notification.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .progress-notification.complete {
+            background: #dcfce7;
+            border-left: 4px solid var(--success);
+        }
+
+        .progress-notification.error {
+            background: #fee2e2;
+            border-left: 4px solid var(--danger);
+        }
+
+        .progress-content {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .progress-icon {
+            font-size: 1.5rem;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        .progress-notification.complete .progress-icon,
+        .progress-notification.error .progress-icon {
+            animation: none;
+        }
+
+        .progress-notification.complete .progress-icon {
+            color: var(--success);
+            font-size: 2rem;
+        }
+
+        .progress-notification.error .progress-icon {
+            color: var(--danger);
+            font-size: 2rem;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .progress-info {
+            flex: 1;
+        }
+
+        .progress-text {
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 0.25rem;
+        }
+
+        .progress-count {
+            font-size: 0.875rem;
+            color: var(--text-light);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: var(--border);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--primary);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
+        .progress-notification.complete .progress-bar {
+            display: none;
+        }
+
+        .progress-notification.error .progress-bar {
+            display: none;
         }
 
         .empty-state {
@@ -604,6 +890,14 @@
                 <span class="breadcrumb-item" data-path="">Home</span>
             </div>
             <div class="actions">
+                <div class="view-mode-toggle">
+                    <button class="btn btn-icon active" onclick="setViewMode('grid')" id="viewModeGrid" title="Grid View">
+                        ⊞
+                    </button>
+                    <button class="btn btn-icon" onclick="setViewMode('list')" id="viewModeList" title="List View">
+                        ≡
+                    </button>
+                </div>
                 <button class="btn btn-primary" onclick="triggerUpload()">
                     📤 Upload Files
                 </button>
@@ -613,8 +907,10 @@
                 <button class="btn btn-secondary" onclick="refreshFiles()" title="Refresh">
                     🔄
                 </button>
-                <button class="btn btn-secondary" onclick="toggleSidebar()" title="File Tree">
-                    🗂️
+                <button class="hamburger-menu" onclick="toggleSidebar()" title="File Tree" aria-label="Toggle File Tree">
+                    <span></span>
+                    <span></span>
+                    <span></span>
                 </button>
             </div>
         </div>

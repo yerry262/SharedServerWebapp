@@ -3,12 +3,23 @@ let currentPath = '';
 let filesData = [];
 let treeData = null;
 let expandedFolders = new Set();
+let viewMode = 'grid'; // 'grid' or 'list'
 
 // Context menu state
 let contextMenuTarget = null;
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
+    // Load saved view mode preference
+    const savedViewMode = localStorage.getItem('viewMode');
+    if (savedViewMode && ['grid', 'list'].includes(savedViewMode)) {
+        viewMode = savedViewMode;
+        document.getElementById('viewModeGrid').classList.toggle('active', viewMode === 'grid');
+        document.getElementById('viewModeList').classList.toggle('active', viewMode === 'list');
+    }
+    
+    setupFileItemEventDelegation();
+    setupModalClickOutside();
     loadFiles('');
     setupEventListeners();
     loadFileTree();
@@ -39,15 +50,21 @@ function setupEventListeners() {
         const items = e.dataTransfer.items;
         const files = [];
 
-        // Handle both files and pasted content
-        for (let item of items) {
-            if (item.kind === 'file') {
-                files.push(item.getAsFile());
+        // Handle both files and folders
+        if (items) {
+            const promises = [];
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i].webkitGetAsEntry();
+                if (item) {
+                    promises.push(traverseFileTree(item));
+                }
             }
+            const results = await Promise.all(promises);
+            results.forEach(result => files.push(...result));
         }
 
         if (files.length > 0) {
-            await uploadFiles(files);
+            await uploadFilesWithProgress(files);
         }
     });
 
@@ -59,7 +76,7 @@ function setupEventListeners() {
     // File input change
     fileInput.addEventListener('change', async (e) => {
         if (e.target.files.length > 0) {
-            await uploadFiles(Array.from(e.target.files));
+            await uploadFilesWithProgress(Array.from(e.target.files));
             fileInput.value = ''; // Reset input
         }
     });
@@ -77,7 +94,7 @@ function setupEventListeners() {
 
         if (files.length > 0) {
             e.preventDefault();
-            await uploadFiles(files);
+            await uploadFilesWithProgress(files);
         }
     });
 
@@ -154,17 +171,33 @@ function renderBreadcrumb(path) {
     const breadcrumb = document.getElementById('breadcrumb');
     const parts = path ? path.split('/').filter(p => p) : [];
     
-    let html = '<span class="breadcrumb-item" onclick="loadFiles(\'\')">🏠 Home</span>';
+    breadcrumb.innerHTML = '';
+    
+    // Home breadcrumb
+    const homeSpan = document.createElement('span');
+    homeSpan.className = 'breadcrumb-item';
+    homeSpan.textContent = '🏠 Home';
+    homeSpan.addEventListener('click', () => loadFiles(''));
+    breadcrumb.appendChild(homeSpan);
     
     let accumulatedPath = '';
     parts.forEach((part, index) => {
         accumulatedPath += (accumulatedPath ? '/' : '') + part;
-        const displayPath = accumulatedPath;
-        html += ` <span class="breadcrumb-separator">/</span> `;
-        html += `<span class="breadcrumb-item" onclick="loadFiles('${displayPath}')">${part}</span>`;
+        const pathToLoad = accumulatedPath;
+        
+        // Separator
+        const separator = document.createElement('span');
+        separator.className = 'breadcrumb-separator';
+        separator.textContent = ' / ';
+        breadcrumb.appendChild(separator);
+        
+        // Breadcrumb item
+        const itemSpan = document.createElement('span');
+        itemSpan.className = 'breadcrumb-item';
+        itemSpan.textContent = part;
+        itemSpan.addEventListener('click', () => loadFiles(pathToLoad));
+        breadcrumb.appendChild(itemSpan);
     });
-    
-    breadcrumb.innerHTML = html;
 }
 
 // Render files and folders
@@ -182,13 +215,17 @@ function renderFiles(items) {
         return;
     }
 
+    const containerClass = viewMode === 'list' ? 'files-list' : 'files-grid';
     const html = `
-        <div class="files-grid">
+        <div class="${containerClass}">
             ${items.map(item => renderFileItem(item)).join('')}
         </div>
     `;
     
     container.innerHTML = html;
+    
+    // Load video thumbnails after rendering
+    loadVideoThumbnails();
 }
 
 // Render individual file item
@@ -196,41 +233,214 @@ function renderFileItem(item) {
     const icon = getFileIcon(item);
     const size = item.type === 'folder' ? '' : `<div class="file-size">${formatFileSize(item.size)}</div>`;
     
-    // Escape special characters for HTML attributes
-    const escapedPath = item.path.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
-    const escapedName = item.name.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+    // Escape HTML entities for display
+    const displayName = escapeHtml(item.name);
     
-    const clickHandler = item.type === 'folder' 
-        ? `onclick="loadFiles('${escapedPath}')"` 
-        : `onclick="handleFileClick('${escapedPath}', '${escapedName}')"`;
+    // Generate thumbnail or icon
+    let iconContent;
+    if (item.type === 'file') {
+        const ext = item.name.split('.').pop().toLowerCase();
+        const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
+        const videoExts = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'm4v', 'mpg', 'mpeg', 'wmv', '3gp', 'ogv', 'ts', 'mts'];
+        
+        if (imageExts.includes(ext)) {
+            // Show image thumbnail
+            iconContent = `
+                <div class="file-thumbnail">
+                    <img src="/media/${escapeHtml(item.path)}" 
+                         alt="${displayName}"
+                         onerror="this.parentElement.innerHTML='${icon}';"
+                         loading="lazy">
+                </div>
+            `;
+        } else if (videoExts.includes(ext)) {
+            // Show video thumbnail using video element
+            iconContent = `
+                <div class="file-thumbnail video-thumbnail" data-video-path="${escapeHtml(item.path)}">
+                    <div class="thumbnail-icon">${icon}</div>
+                    <div class="video-play-overlay">▶</div>
+                </div>
+            `;
+        } else {
+            iconContent = `<div class="file-icon">${icon}</div>`;
+        }
+    } else {
+        iconContent = `<div class="file-icon">${icon}</div>`;
+    }
     
-    // Make items draggable and folders droppable
-    const draggable = `draggable="true"`;
-    const dragHandlers = `
-        ondragstart="handleDragStart(event, '${escapedPath}', '${escapedName}', '${item.type}')"
-        ondragend="handleDragEnd(event)"
-        ondragover="handleDragOver(event, '${item.type}')"
-        ondragleave="handleDragLeave(event)"
-        ondrop="handleDrop(event, '${escapedPath}', '${item.type}')"
-    `;
-    
-    // Add context menu handler for folders
-    const contextMenuHandler = item.type === 'folder' ? `
-        oncontextmenu="handleContextMenu(event, '${escapedPath}', '${escapedName}')"
-    ` : '';
-
     return `
-        <div class="file-item" ${clickHandler} ${draggable} ${dragHandlers} ${contextMenuHandler} data-path="${escapedPath}" data-type="${item.type}" data-name="${escapedName}">
+        <div class="file-item" 
+             data-path="${escapeHtml(item.path)}" 
+             data-name="${escapeHtml(item.name)}"
+             data-type="${item.type}"
+             draggable="true">
             <div class="file-actions">
-                <button class="delete-btn" onclick="event.stopPropagation(); deleteItem('${escapedPath}', '${escapedName}')" title="Delete">
+                <button class="delete-btn" data-action="delete" title="Delete">
                     🗑️
                 </button>
             </div>
-            <div class="file-icon">${icon}</div>
-            <div class="file-name" title="${escapedName}">${item.name}</div>
+            ${iconContent}
+            <div class="file-name" title="${displayName}">${displayName}</div>
             ${size}
         </div>
     `;
+}
+
+// Escape HTML entities
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+// Load video thumbnails
+function loadVideoThumbnails() {
+    const videoThumbnails = document.querySelectorAll('.video-thumbnail');
+    
+    videoThumbnails.forEach((thumbnail, index) => {
+        const videoPath = thumbnail.getAttribute('data-video-path');
+        if (!videoPath) return;
+        
+        // Delay each video thumbnail generation to avoid overwhelming the browser
+        setTimeout(() => {
+            const video = document.createElement('video');
+            video.crossOrigin = 'anonymous';
+            video.preload = 'metadata';
+            video.muted = true;
+            
+            video.addEventListener('loadeddata', () => {
+                // Seek to 1 second or 10% of duration, whichever is less
+                const seekTime = Math.min(1, video.duration * 0.1);
+                video.currentTime = seekTime;
+            });
+            
+            video.addEventListener('seeked', () => {
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 160;
+                    canvas.height = 90;
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Calculate aspect ratio
+                    const aspectRatio = video.videoWidth / video.videoHeight;
+                    let drawWidth = canvas.width;
+                    let drawHeight = canvas.height;
+                    let offsetX = 0;
+                    let offsetY = 0;
+                    
+                    if (aspectRatio > canvas.width / canvas.height) {
+                        drawHeight = canvas.width / aspectRatio;
+                        offsetY = (canvas.height - drawHeight) / 2;
+                    } else {
+                        drawWidth = canvas.height * aspectRatio;
+                        offsetX = (canvas.width - drawWidth) / 2;
+                    }
+                    
+                    ctx.drawImage(video, offsetX, offsetY, drawWidth, drawHeight);
+                    
+                    const thumbnailImg = document.createElement('img');
+                    thumbnailImg.src = canvas.toDataURL();
+                    thumbnailImg.style.width = '100%';
+                    thumbnailImg.style.height = '100%';
+                    thumbnailImg.style.objectFit = 'cover';
+                    
+                    const iconEl = thumbnail.querySelector('.thumbnail-icon');
+                    if (iconEl) {
+                        iconEl.replaceWith(thumbnailImg);
+                    }
+                } catch (error) {
+                    console.error('Error generating video thumbnail:', error);
+                    // Keep the default icon on error
+                }
+            });
+            
+            video.addEventListener('error', () => {
+                // Keep the default icon on error
+                console.error('Error loading video for thumbnail');
+            });
+            
+            video.src = '/media/' + videoPath;
+        }, index * 100); // Stagger thumbnail generation
+    });
+}
+
+// Setup event delegation for file items (runs once on page load)
+function setupFileItemEventDelegation() {
+    const container = document.getElementById('filesContainer');
+    
+    // Use event delegation for all file item interactions
+    container.addEventListener('click', (e) => {
+        const fileItem = e.target.closest('.file-item');
+        if (!fileItem) return;
+        
+        const deleteBtn = e.target.closest('.delete-btn');
+        if (deleteBtn) {
+            e.stopPropagation();
+            const path = fileItem.getAttribute('data-path');
+            const name = fileItem.getAttribute('data-name');
+            deleteItem(path, name);
+            return;
+        }
+        
+        const path = fileItem.getAttribute('data-path');
+        const name = fileItem.getAttribute('data-name');
+        const type = fileItem.getAttribute('data-type');
+        
+        if (type === 'folder') {
+            loadFiles(path);
+        } else {
+            handleFileClick(path, name);
+        }
+    });
+    
+    // Drag and drop event delegation
+    container.addEventListener('dragstart', (e) => {
+        const fileItem = e.target.closest('.file-item');
+        if (!fileItem) return;
+        
+        const path = fileItem.getAttribute('data-path');
+        const name = fileItem.getAttribute('data-name');
+        const type = fileItem.getAttribute('data-type');
+        handleDragStart(e, path, name, type);
+    });
+    
+    container.addEventListener('dragend', (e) => {
+        const fileItem = e.target.closest('.file-item');
+        if (fileItem) handleDragEnd(e);
+    });
+    
+    container.addEventListener('dragover', (e) => {
+        const fileItem = e.target.closest('.file-item');
+        if (!fileItem) return;
+        const type = fileItem.getAttribute('data-type');
+        handleDragOver(e, type);
+    });
+    
+    container.addEventListener('dragleave', (e) => {
+        const fileItem = e.target.closest('.file-item');
+        if (fileItem) handleDragLeave(e);
+    });
+    
+    container.addEventListener('drop', (e) => {
+        const fileItem = e.target.closest('.file-item');
+        if (!fileItem) return;
+        const path = fileItem.getAttribute('data-path');
+        const type = fileItem.getAttribute('data-type');
+        handleDrop(e, path, type);
+    });
+    
+    // Context menu for folders
+    container.addEventListener('contextmenu', (e) => {
+        const fileItem = e.target.closest('.file-item');
+        if (!fileItem) return;
+        
+        const type = fileItem.getAttribute('data-type');
+        if (type === 'folder') {
+            const path = fileItem.getAttribute('data-path');
+            const name = fileItem.getAttribute('data-name');
+            handleContextMenu(e, path, name);
+        }
+    });
 }
 
 // Get icon for file type
@@ -243,7 +453,7 @@ function getFileIcon(item) {
     if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) return '🖼️';
     
     // Videos
-    if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'm4v'].includes(ext)) return '🎥';
+    if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'm4v', 'mpg', 'mpeg', 'wmv', '3gp', 'ogv', 'ts', 'mts'].includes(ext)) return '🎥';
     
     // Audio
     if (['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'].includes(ext)) return '🎵';
@@ -276,7 +486,7 @@ function formatFileSize(bytes) {
 async function handleFileClick(path, name) {
     const ext = name.split('.').pop().toLowerCase();
     const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
-    const videoExts = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'm4v'];
+    const videoExts = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'm4v', 'mpg', 'mpeg', 'wmv', '3gp', 'ogv', 'ts', 'mts'];
     
     if (imageExts.includes(ext)) {
         showMedia('image', path, name);
@@ -289,9 +499,33 @@ async function handleFileClick(path, name) {
 }
 
 // Show media in modal
+// Set view mode
+function setViewMode(mode) {
+    viewMode = mode;
+    
+    // Update button states
+    document.getElementById('viewModeGrid').classList.toggle('active', mode === 'grid');
+    document.getElementById('viewModeList').classList.toggle('active', mode === 'list');
+    
+    // Re-render files with new view mode
+    renderFiles(filesData);
+    
+    // Save preference
+    localStorage.setItem('viewMode', mode);
+}
+
+// Store current video player instance
+let currentVideoPlayer = null;
+
 function showMedia(type, path, name) {
     const modal = document.getElementById('mediaModal');
     const content = document.getElementById('mediaContent');
+    
+    // Dispose of previous video player if exists
+    if (currentVideoPlayer) {
+        currentVideoPlayer.dispose();
+        currentVideoPlayer = null;
+    }
     
     if (type === 'image') {
         content.innerHTML = `
@@ -302,16 +536,83 @@ function showMedia(type, path, name) {
             </div>
         `;
     } else if (type === 'video') {
+        const ext = path.split('.').pop().toLowerCase();
+        const videoId = 'video-player-' + Date.now();
+        
+        // Get proper MIME type
+        const mimeTypes = {
+            'mp4': 'video/mp4',
+            'm4v': 'video/mp4',
+            'mov': 'video/quicktime',
+            'avi': 'video/x-msvideo',
+            'mkv': 'video/x-matroska',
+            'webm': 'video/webm',
+            'flv': 'video/x-flv',
+            'mpg': 'video/mpeg',
+            'mpeg': 'video/mpeg',
+            'wmv': 'video/x-ms-wmv',
+            '3gp': 'video/3gpp',
+            'ogv': 'video/ogg',
+            'ts': 'video/mp2t',
+            'mts': 'video/mp2t'
+        };
+        
+        const mimeType = mimeTypes[ext] || 'video/mp4';
+        
         content.innerHTML = `
-            <h3 style="margin-bottom: 1rem;">${name}</h3>
-            <video controls autoplay style="max-width: 100%; max-height: 70vh;">
-                <source src="/media/${path}" type="video/${path.split('.').pop()}">
-                Your browser doesn't support video playback.
+            <h3 style="margin-bottom: 1rem;">${escapeHtml(name)}</h3>
+            <video id="${videoId}" class="video-js vjs-big-play-centered" controls preload="auto">
+                <source src="/media/${path}" type="${mimeType}">
+                <p class="vjs-no-js">
+                    To view this video please enable JavaScript, and consider upgrading to a
+                    web browser that supports HTML5 video
+                </p>
             </video>
             <div style="margin-top: 1rem; text-align: center;">
                 <a href="/api/download/${path}" class="btn btn-primary" download>Download</a>
             </div>
         `;
+        
+        // Show modal first
+        modal.classList.add('active');
+        
+        // Initialize Video.js player after modal is visible
+        setTimeout(() => {
+            if (document.getElementById(videoId)) {
+                currentVideoPlayer = videojs(videoId, {
+                    controls: true,
+                    autoplay: false,
+                    preload: 'auto',
+                    fluid: true,
+                    aspectRatio: '16:9',
+                    playbackRates: [0.5, 1, 1.5, 2],
+                    fill: false,
+                    controlBar: {
+                        volumePanel: { inline: false }
+                    }
+                });
+                
+                // Error handling
+                currentVideoPlayer.on('error', function() {
+                    const error = currentVideoPlayer.error();
+                    console.error('Video player error:', error);
+                    
+                    // Show more helpful error message
+                    let errorMsg = 'Error loading video.';
+                    if (error && error.code === 4) {
+                        errorMsg = `This video format (.${ext}) may not be supported by your browser. Try downloading it instead.`;
+                    }
+                    showToast(errorMsg, 'error');
+                });
+                
+                // Ready event
+                currentVideoPlayer.ready(function() {
+                    console.log('Video player ready');
+                });
+            }
+        }, 150);
+        
+        return; // Exit early since we already showed the modal
     }
     
     modal.classList.add('active');
@@ -329,30 +630,74 @@ function triggerUpload() {
 }
 
 // Upload files
-async function uploadFiles(files) {
+// Recursively traverse file tree for folders
+async function traverseFileTree(item, path = '') {
+    const files = [];
+    
+    if (item.isFile) {
+        return new Promise((resolve) => {
+            item.file((file) => {
+                // Preserve folder structure
+                if (path) {
+                    file.relativePath = path + file.name;
+                }
+                resolve([file]);
+            });
+        });
+    } else if (item.isDirectory) {
+        const dirReader = item.createReader();
+        const entries = await new Promise((resolve) => {
+            dirReader.readEntries(resolve);
+        });
+        
+        for (let entry of entries) {
+            const subFiles = await traverseFileTree(entry, path + item.name + '/');
+            files.push(...subFiles);
+        }
+    }
+    
+    return files;
+}
+
+// Upload files with progress notification
+async function uploadFilesWithProgress(files) {
     if (files.length === 0) return;
 
-    const formData = new FormData();
-    formData.append('path', currentPath);
+    const progressNotification = showProgressNotification(files.length);
     
-    for (let file of files) {
-        formData.append('files', file);
-    }
-
-    showToast(`Uploading ${files.length} file(s)...`, 'success');
-
     try {
-        const response = await fetch('/api/upload', {
-            method: 'POST',
-            body: formData
-        });
+        // Upload in batches to avoid overwhelming the server
+        const batchSize = 10;
+        let uploadedCount = 0;
+        
+        for (let i = 0; i < files.length; i += batchSize) {
+            const batch = files.slice(i, i + batchSize);
+            
+            const formData = new FormData();
+            formData.append('path', currentPath);
+            
+            for (let file of batch) {
+                formData.append('files', file);
+                // Include relative path if it exists (for folder uploads)
+                if (file.relativePath) {
+                    formData.append('relativePaths', file.relativePath);
+                }
+            }
 
-        if (!response.ok) {
-            throw new Error('Upload failed');
+            const response = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error('Upload failed');
+            }
+
+            uploadedCount += batch.length;
+            updateProgressNotification(progressNotification, uploadedCount, files.length);
         }
 
-        const result = await response.json();
-        showToast(result.message, 'success');
+        completeProgressNotification(progressNotification, files.length);
         
         // Reload current directory and tree
         await Promise.all([
@@ -361,8 +706,13 @@ async function uploadFiles(files) {
         ]);
     } catch (error) {
         console.error('Upload error:', error);
-        showToast('Upload failed: ' + error.message, 'error');
+        errorProgressNotification(progressNotification, error.message);
     }
+}
+
+async function uploadFiles(files) {
+    // Keep old function for backward compatibility
+    return uploadFilesWithProgress(files);
 }
 
 // Show create folder modal
@@ -456,6 +806,40 @@ async function deleteItem(path, name) {
 function closeModal(modalId) {
     const modal = document.getElementById(modalId);
     modal.classList.remove('active');
+    
+    // Dispose video player when closing media modal
+    if (modalId === 'mediaModal' && currentVideoPlayer) {
+        currentVideoPlayer.dispose();
+        currentVideoPlayer = null;
+    }
+}
+
+// Setup click outside modal to close
+function setupModalClickOutside() {
+    // Media modal
+    const mediaModal = document.getElementById('mediaModal');
+    mediaModal.addEventListener('click', (e) => {
+        // Close if clicking directly on the modal backdrop (not the content)
+        if (e.target === mediaModal) {
+            closeModal('mediaModal');
+        }
+    });
+    
+    // Rename modal
+    const renameModal = document.getElementById('renameModal');
+    renameModal.addEventListener('click', (e) => {
+        if (e.target === renameModal) {
+            closeModal('renameModal');
+        }
+    });
+    
+    // Create folder modal
+    const createFolderModal = document.getElementById('createFolderModal');
+    createFolderModal.addEventListener('click', (e) => {
+        if (e.target === createFolderModal) {
+            closeModal('createFolderModal');
+        }
+    });
 }
 
 // Drag and drop handlers
@@ -600,7 +984,7 @@ async function loadFileTree() {
 function renderTree(items, container, isRoot = true) {
     if (isRoot) {
         let html = `
-            <div class="tree-item ${currentPath === '' ? 'active' : ''}" onclick="navigateToPath('')">
+            <div class="tree-item ${currentPath === '' ? 'active' : ''}" data-path="" data-action="navigate">
                 <span class="tree-item-icon">🏠</span>
                 <span class="tree-item-name">Home</span>
             </div>
@@ -611,6 +995,21 @@ function renderTree(items, container, isRoot = true) {
         });
         
         container.innerHTML = html;
+        
+        // Add event delegation for tree items
+        container.addEventListener('click', (e) => {
+            const treeItem = e.target.closest('[data-action="navigate"]');
+            const toggleItem = e.target.closest('[data-action="toggle"]');
+            
+            if (toggleItem) {
+                e.stopPropagation();
+                const path = toggleItem.getAttribute('data-path');
+                toggleFolder(path);
+            } else if (treeItem) {
+                const path = treeItem.getAttribute('data-path');
+                navigateToPath(path);
+            }
+        });
     } else {
         let html = '';
         items.forEach(item => {
@@ -626,12 +1025,16 @@ function renderTreeItem(item) {
     const isActive = currentPath === item.path;
     const toggle = hasChildren ? (isExpanded ? '▼' : '▶') : '';
     
+    // Escape path for use in data attribute
+    const escapedPath = escapeHtml(item.path);
+    const escapedName = escapeHtml(item.name);
+    
     let html = `
         <div>
-            <div class="tree-item ${isActive ? 'active' : ''}" onclick="navigateToPath('${item.path}')">
-                <span class="tree-toggle" onclick="event.stopPropagation(); toggleFolder('${item.path}')">${toggle}</span>
+            <div class="tree-item ${isActive ? 'active' : ''}" data-path="${escapedPath}" data-action="navigate">
+                <span class="tree-toggle" data-path="${escapedPath}" data-action="toggle">${toggle}</span>
                 <span class="tree-item-icon">📁</span>
-                <span class="tree-item-name">${item.name}</span>
+                <span class="tree-item-name">${escapedName}</span>
             </div>
     `;
     
@@ -813,4 +1216,71 @@ function showToast(message, type = 'success') {
         toast.style.animation = 'slideIn 0.3s reverse';
         setTimeout(() => toast.remove(), 300);
     }, 3000);
+}
+
+// Progress notification functions
+function showProgressNotification(totalFiles) {
+    const notification = document.createElement('div');
+    notification.className = 'progress-notification';
+    notification.innerHTML = `
+        <div class="progress-content">
+            <div class="progress-icon">📤</div>
+            <div class="progress-info">
+                <div class="progress-text">Uploading files...</div>
+                <div class="progress-count">0 / ${totalFiles}</div>
+            </div>
+        </div>
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: 0%"></div>
+        </div>
+    `;
+    document.body.appendChild(notification);
+    
+    // Trigger animation
+    setTimeout(() => notification.classList.add('show'), 10);
+    
+    return notification;
+}
+
+function updateProgressNotification(notification, uploaded, total) {
+    const percentage = Math.round((uploaded / total) * 100);
+    const countElement = notification.querySelector('.progress-count');
+    const fillElement = notification.querySelector('.progress-fill');
+    
+    if (countElement) countElement.textContent = `${uploaded} / ${total}`;
+    if (fillElement) fillElement.style.width = `${percentage}%`;
+}
+
+function completeProgressNotification(notification, total) {
+    const textElement = notification.querySelector('.progress-text');
+    const iconElement = notification.querySelector('.progress-icon');
+    
+    if (textElement) textElement.textContent = 'Upload complete!';
+    if (iconElement) iconElement.textContent = '✓';
+    
+    notification.classList.add('complete');
+    
+    // Remove after 2 seconds
+    setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => notification.remove(), 300);
+    }, 2000);
+}
+
+function errorProgressNotification(notification, errorMessage) {
+    const textElement = notification.querySelector('.progress-text');
+    const iconElement = notification.querySelector('.progress-icon');
+    
+    if (textElement) textElement.textContent = 'Upload failed!';
+    if (iconElement) iconElement.textContent = '✗';
+    
+    notification.classList.add('error');
+    
+    // Remove after 3 seconds
+    setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
+    
+    showToast('Upload failed: ' + errorMessage, 'error');
 }
