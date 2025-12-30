@@ -9,6 +9,30 @@ const app = express();
 const PORT = 8008;
 const STORAGE_PATH = 'E:\\TankStorage';
 
+// Security middleware - restrict to local network only
+app.use((req, res, next) => {
+    const clientIP = req.ip || req.connection.remoteAddress;
+    
+    // Allow localhost and private IP ranges
+    const isLocalhost = clientIP === '::1' || clientIP === '127.0.0.1' || clientIP === '::ffff:127.0.0.1';
+    const isPrivateIP = /^(::ffff:)?(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/.test(clientIP);
+    
+    if (!isLocalhost && !isPrivateIP) {
+        console.log(`Blocked request from non-local IP: ${clientIP}`);
+        return res.status(403).send('Access denied: Local network only');
+    }
+    
+    next();
+});
+
+// Security headers
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    next();
+});
+
 // Middleware
 app.use(cors());
 app.use(express.json());

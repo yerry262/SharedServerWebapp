@@ -2,13 +2,16 @@
 
 A modern, full-featured web application for managing files and folders on your network storage drive. Access your files from any device - desktop, mobile, or tablet - with an intuitive drag-and-drop interface.
 
+**✅ Production Ready** - Runs as a Windows service with auto-start and auto-restart capabilities.
+
 ## 🌟 Features
 
 ### File Management
 - **📂 Browse & Navigate** - Hierarchical folder structure with breadcrumb navigation
 - **📤 Multi-File Upload** - Drag & drop, click to upload, or paste files directly
 - **🗂️ File Tree Sidebar** - Collapsible sidebar with full directory tree view
-- **➡️ Move Files** - Drag and drop files/folders to reorganize
+- **➡️ Move Files & Folders** - Drag and drop files/folders to reorganize
+- **✏️ Rename Folders** - Right-click any folder to rename it
 - **📁 Create Folders** - Organize content with custom folders
 - **🗑️ Delete Items** - Remove files and folders you no longer need
 
@@ -30,14 +33,21 @@ A modern, full-featured web application for managing files and folders on your n
 - **⚡ Real-time Updates** - Instant feedback for all operations
 - **🔔 Toast Notifications** - Success and error messages
 
+### Security & Production
+- **🔒 Local Network Only** - IP filtering blocks public internet access
+- **🛡️ Firewall Protected** - Windows Firewall rule restricts to private networks
+- **🔁 Auto-Restart** - Service automatically restarts if it crashes (5s delay)
+- **📝 Logging** - All activity logged to files with automatic rotation
+- **🚀 Boot on Startup** - Runs as Windows service, starts automatically
+
 ## 🚀 Quick Start
 
 ### Prerequisites
 - Node.js 18+ (LTS recommended)
-- Windows, Mac, or Linux
+- Windows (for service installation)
 - Network storage drive (configured at E:\TankStorage)
 
-### Installation
+### Standard Installation (Development)
 
 1. **Clone or download this repository**
 
@@ -55,9 +65,57 @@ A modern, full-featured web application for managing files and folders on your n
    - Local: http://localhost:8008
    - Network: http://TANK:8008 (or your computer's IP address)
 
-4. **Access the application:**
-   - Local: http://localhost:8008
-   - Network: http://TANK:8008 (or your computer's IP address)
+### Windows Service Installation (Production)
+
+For production use with auto-start on boot:
+
+1. **Complete standard installation first** (steps above)
+
+2. **Install as Windows Service:**
+   - Right-click `install-service.ps1`
+   - Select "Run with PowerShell"
+   - Confirm Administrator prompt
+
+3. **Service is now running!**
+   - Auto-starts on Windows boot
+   - Auto-restarts if it crashes
+   - Logs to `logs/` directory
+
+**Service Management:**
+```powershell
+Get-Service TankStorage              # Check status
+Start-Service TankStorage            # Start
+Stop-Service TankStorage             # Stop
+Restart-Service TankStorage          # Restart
+```
+
+**View Logs:**
+```powershell
+Get-Content logs\service-output.log -Tail 50
+Get-Content logs\service-error.log -Tail 50
+```
+
+**Uninstall Service:**
+- Right-click `uninstall-service.ps1`
+- Select "Run with PowerShell"
+
+📖 **Full service documentation:** See [SERVICE-SETUP.md](SERVICE-SETUP.md)
+
+## 🔒 Security
+
+### Network Protection
+- **IP Filtering** - Application blocks non-local IP addresses at the code level
+- **Firewall Rule** - Windows Firewall restricts access to local subnet only
+- **Private Networks** - Only accepts connections from 192.168.x.x, 10.x.x.x, 172.16-31.x.x
+- **No Internet Exposure** - Designed for local network use only (up to 20 devices)
+
+### Safe for Local Network
+✅ Perfect for home or small office networks  
+✅ Protects against accidental internet exposure  
+✅ All file operations validated and sanitized  
+✅ Path traversal protection prevents unauthorized access  
+
+⚠️ **Not designed for public internet hosting**
 
 ## 📖 Usage Guide
 
@@ -93,6 +151,13 @@ A modern, full-featured web application for managing files and folders on your n
 - Click folders to navigate
 - Click ▶/▼ to expand/collapse folders
 - Toggle width with ⇔ button (half/full screen)
+
+### Renaming Folders
+
+- **Right-click** on any folder
+- Select "✏️ Rename"
+- Enter new name
+- Click "Save" or "Exit"
 
 ### Moving Files & Folders
 

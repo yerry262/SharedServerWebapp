@@ -9,6 +9,11 @@ yarn-error.log*
 .env.local
 .env.*.local
 
+# Service and logs
+nssm.exe
+nssm.zip
+logs/*.log
+
 # OS Files
 .DS_Store
 Thumbs.db
