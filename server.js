@@ -9,16 +9,26 @@ const app = express();
 const PORT = 8008;
 const STORAGE_PATH = 'E:\\TankStorage';
 
+// Trust proxy to get real IP addresses
+app.set('trust proxy', true);
+
 // Security middleware - restrict to local network only
 app.use((req, res, next) => {
-    const clientIP = req.ip || req.connection.remoteAddress;
+    const clientIP = req.ip || req.connection.remoteAddress || 'unknown';
     
     // Allow localhost and private IP ranges
-    const isLocalhost = clientIP === '::1' || clientIP === '127.0.0.1' || clientIP === '::ffff:127.0.0.1';
+    const isLocalhost = clientIP === '::1' || 
+                       clientIP === '127.0.0.1' || 
+                       clientIP === '::ffff:127.0.0.1' ||
+                       clientIP === 'localhost';
+    
     const isPrivateIP = /^(::ffff:)?(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/.test(clientIP);
     
-    if (!isLocalhost && !isPrivateIP) {
-        console.log(`Blocked request from non-local IP: ${clientIP}`);
+    // Log the connection for debugging
+    console.log(`Connection from: ${clientIP}`);
+    
+    if (!isLocalhost && !isPrivateIP && clientIP !== 'unknown') {
+        console.log(`⚠️  Blocked request from non-local IP: ${clientIP}`);
         return res.status(403).send('Access denied: Local network only');
     }
     
