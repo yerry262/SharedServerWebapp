@@ -147,7 +147,7 @@ Start-Process -NoNewWindow node server.js
 ## Folder Structure
 
 ```
-SharedSeverWebapp/
+SharedServerWebapp/
 ├── server.js          # Backend server
 ├── package.json       # Dependencies
 ├── README.md          # Documentation
@@ -267,7 +267,7 @@ To make the server start automatically:
 1. Create a batch file `start-tankstorage.bat`:
 ```batch
 @echo off
-cd /d "c:\Users\jerry\Desktop\SharedSeverWebapp"
+cd /d "c:\Users\jerry\Desktop\SharedServerWebapp"
 node server.js
 ```
 
