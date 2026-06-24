@@ -286,7 +286,7 @@ limits: { fileSize: 5000 * 1024 * 1024 }  // 5GB in bytes
 ## 🗂️ Project Structure
 
 ```
-SharedSeverWebapp/
+SharedServerWebapp/
 ├── server.js              # Express backend server
 ├── package.json           # Node.js dependencies
 ├── README.md             # This file

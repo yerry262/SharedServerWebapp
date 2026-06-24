@@ -87,7 +87,8 @@ const upload = multer({
 function isSafePath(requestedPath) {
     const fullPath = path.resolve(path.join(STORAGE_PATH, requestedPath));
     const basePath = path.resolve(STORAGE_PATH);
-    return fullPath.startsWith(basePath);
+    const rel = path.relative(basePath, fullPath);
+    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
 // Get file/folder listing
